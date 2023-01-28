@@ -9,12 +9,6 @@ use std::{
     time::Duration,
 };
 
-#[allow(clippy::large_enum_variant)]
-enum WorkerMessage {
-    Largest(Keypair),
-    Progress { iteration_delta: usize },
-}
-
 fn main() {
     if let Err(e) = run_main() {
         eprintln!("error running edbrute: {e}");
@@ -26,6 +20,8 @@ fn run_main() -> anyhow::Result<()> {
 
     println!("bruteforcing with {num_threads} threads");
 
+    let spinner = setup_spinner();
+
     let mut to_threads = Vec::new();
     let (to_controller, from_threads) = sync_channel(64);
 
@@ -33,25 +29,26 @@ fn run_main() -> anyhow::Result<()> {
         let (to_thread, from_controller) = sync_channel(64);
         to_threads.push(to_thread);
 
+        let spinner = spinner.clone();
         let to_controller = to_controller.clone();
-
         std::thread::spawn(move || {
-            run_worker(from_controller, to_controller);
+            run_worker(spinner, from_controller, to_controller);
         });
+
         std::thread::sleep(Duration::from_millis(100));
     }
 
-    run_controller(to_threads, from_threads).context("unable to start controller thread")?;
+    run_controller(spinner, to_threads, from_threads)
+        .context("unable to start controller thread")?;
 
     Ok(())
 }
 
 fn run_controller(
+    spinner: ProgressBar,
     to_threads: Vec<SyncSender<u64>>,
-    from_threads: Receiver<WorkerMessage>,
+    from_threads: Receiver<Keypair>,
 ) -> anyhow::Result<()> {
-    let spinner = setup_spinner();
-
     let (mut checkpoint_file, saved_largest_keypair) =
         checkpoint_with_largest_keypair("checkpoint.log")
             .context("unable to create checkpoint file")?;
@@ -68,42 +65,39 @@ fn run_controller(
     spinner.set_message(public_pretty);
 
     while let Ok(keypair) = from_threads.recv() {
-        match keypair {
-            WorkerMessage::Largest(keypair) => {
-                let value = public_key_to_u64(&keypair);
+        let value = public_key_to_u64(&keypair);
 
-                if value > largest_value {
-                    largest_value = value;
+        if value > largest_value {
+            largest_value = value;
 
-                    for sender in &to_threads {
-                        sender.send(largest_value).unwrap();
-                    }
-
-                    largest_keypair = keypair;
-
-                    writeln!(checkpoint_file, "{}", serialize_keypair(&largest_keypair))
-                        .context("unable to save keypair to checkpoint file")?;
-                    checkpoint_file.flush()?;
-
-                    let printed_keypair = pretty_print_public(&largest_keypair);
-                    spinner.println(format!(
-                        "[{}] {}",
-                        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S"),
-                        &printed_keypair
-                    ));
-                    spinner.set_message(printed_keypair);
-                }
+            for sender in &to_threads {
+                sender.send(largest_value).unwrap();
             }
-            WorkerMessage::Progress { iteration_delta } => {
-                spinner.inc(iteration_delta as u64);
-            }
+
+            largest_keypair = keypair;
+
+            writeln!(checkpoint_file, "{}", serialize_keypair(&largest_keypair))
+                .context("unable to save keypair to checkpoint file")?;
+            checkpoint_file.flush()?;
+
+            let printed_keypair = pretty_print_public(&largest_keypair);
+            spinner.println(format!(
+                "[{}] {}",
+                chrono::Utc::now().format("%Y-%m-%d %H:%M:%S"),
+                &printed_keypair
+            ));
+            spinner.set_message(printed_keypair);
         }
     }
 
     Ok(())
 }
 
-fn run_worker(from_controller: Receiver<u64>, to_controller: SyncSender<WorkerMessage>) {
+fn run_worker(
+    spinner: ProgressBar,
+    from_controller: Receiver<u64>,
+    to_controller: SyncSender<Keypair>,
+) {
     let mut rng = rand::thread_rng();
     let mut largest_value = from_controller.recv().unwrap();
 
@@ -114,20 +108,14 @@ fn run_worker(from_controller: Receiver<u64>, to_controller: SyncSender<WorkerMe
             let value = public_key_to_u64(&pair);
 
             if value > largest_value {
-                to_controller.send(WorkerMessage::Largest(pair)).unwrap();
+                to_controller.send(pair).unwrap();
                 largest_value = value;
             }
         }
 
-        if let Ok(largest_found) = from_controller.try_recv() {
+        spinner.inc(iteration_delta as u64);
+        while let Ok(largest_found) = from_controller.try_recv() {
             largest_value = largest_found;
-        }
-
-        if to_controller
-            .send(WorkerMessage::Progress { iteration_delta })
-            .is_err()
-        {
-            break;
         }
     }
 }
