@@ -1,6 +1,7 @@
 use anyhow::Context;
 use ed25519_dalek::{Keypair, PublicKey, SecretKey};
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
+use clap::Parser;
 use std::{
     fs::File,
     io::{BufRead, BufReader, Write},
@@ -15,6 +16,14 @@ enum WorkerMessage {
     Progress { iteration_delta: usize },
 }
 
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+   /// The number of threads to use
+   #[arg(short, long)]
+   jobs: Option<usize>,
+}
+
 fn main() {
     if let Err(e) = run_main() {
         eprintln!("error running edbrute: {e}");
@@ -22,9 +31,10 @@ fn main() {
 }
 
 fn run_main() -> anyhow::Result<()> {
-    let num_threads = num_cpus::get();
+    let args = Args::parse();
+    let num_threads = args.jobs.unwrap_or(num_cpus::get());
 
-    println!("bruteforcing with {num_threads} threads");
+    println!("bruteforcing with {num_threads} thread{}", if num_threads == 1 { "" } else { "s" });
 
     let mut to_threads = Vec::new();
     let (to_controller, from_threads) = sync_channel(64);
