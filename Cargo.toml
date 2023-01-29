@@ -9,6 +9,7 @@ debug = true
 [dependencies]
 anyhow = "1.0.68"
 chrono = "0.4.23"
+clap = { version = "4.1.4", features = ["derive"] }
 ed25519-dalek = "1.0.1"
 hex = "0.4.3"
 indicatif = "0.17.3"
