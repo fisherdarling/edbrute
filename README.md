@@ -18,7 +18,7 @@ bruteforcing with 8 threads
 [2023-01-28 13:33:18] fffff95243db7df61b61ae00a59b20fb5f3160559101304d99a8e39d5c789a02
 
 ⠠ [00:00:06] 384538.65 keys/s, 2,621,400
-  largest: fffff95243db7df61b61ae00a59b20fb5f3160559101304d99a8e39d5c789a02                                                                                           
+  largest: fffff95243db7df61b61ae00a59b20fb5f3160559101304d99a8e39d5c789a02
 ```
 
 Inside the generated `checkpoint.log` file, you'll find a list of found large key pairs.
